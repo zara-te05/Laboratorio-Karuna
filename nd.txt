@@ -1,0 +1,119 @@
+# Documentación de la Base de Datos SQLite (karuna.db)
+
+La base de datos de Karuna utiliza SQLite y se guarda en un archivo llamado `karuna.db`.
+A continuación se detallan las tablas y sus respectivos esquemas para que puedas interactuar con ella sin problemas desde Python u otros módulos.
+
+---
+
+## 1. DOCENTE
+Almacena la información de los usuarios (docentes) registrados en el sistema.
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `email` (TEXT NOT NULL UNIQUE) - Correo del docente.
+- `password` (TEXT NOT NULL) - Contraseña encriptada/hasheada (gestionado en Rust).
+- `nombre` (TEXT)
+- `apellido` (TEXT)
+- `institucion` (TEXT)
+- `created_at` (DATETIME DEFAULT CURRENT_TIMESTAMP)
+
+## 2. SALON
+Almacena los salones de clases creados por un docente.
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `docente_id` (INTEGER NOT NULL) - Referencia a DOCENTE(id)
+- `nombre` (TEXT NOT NULL)
+- `materia` (TEXT NOT NULL)
+- `seccion` (TEXT NOT NULL)
+- `color_from` (TEXT NOT NULL) - Degradado inicial para UI (ej. '#1E1B4B').
+- `color_to` (TEXT NOT NULL) - Degradado final para UI (ej. '#D4AF37').
+- `estudiantes` (INTEGER NOT NULL DEFAULT 0) - Contador en caché de alumnos.
+- `asistencia` (REAL NOT NULL DEFAULT 0.0) - Porcentaje de asistencia general.
+- `created_at` (DATETIME DEFAULT CURRENT_TIMESTAMP)
+
+## 3. ESTUDIANTE
+Almacena la información de los alumnos que pertenecen a un salón determinado.
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `salon_id` (INTEGER NOT NULL) - Referencia a SALON(id)
+- `nombre` (TEXT NOT NULL)
+- `apellido` (TEXT NOT NULL)
+- `id_control` (TEXT NOT NULL) - Matrícula, número de control o código.
+- `participacion_extra` (REAL NOT NULL DEFAULT 0) - Puntos extra (ej. participaciones).
+- `created_at` (DATETIME DEFAULT CURRENT_TIMESTAMP)
+
+## 4. CRITERIO_EVALUACION
+Almacena los criterios y su ponderación dentro de un salón (ej. Tareas, Proyectos, Asistencia).
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `salon_id` (INTEGER NOT NULL) - Referencia a SALON(id)
+- `nombre` (TEXT NOT NULL)
+- `porcentaje` (REAL NOT NULL DEFAULT 0) - El peso del criterio en porcentaje (debe sumar 100 por salón).
+
+## 5. CONFIG_AULA
+Ajustes o configuraciones globales del aula.
+- `salon_id` (INTEGER PRIMARY KEY) - Única por salón.
+- `calificacion_minima` (REAL NOT NULL DEFAULT 60) - Base 100 (promedio aprobatorio).
+- `num_parciales` (INTEGER NOT NULL DEFAULT 3) - Cuántos exámenes parciales se evalúan.
+
+## 6. ASIGNACION
+Almacena las actividades específicas que se van a evaluar (Tareas individuales, Exámenes parciales).
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `salon_id` (INTEGER NOT NULL) - Referencia a SALON(id)
+- `criterio_id` (INTEGER) - El criterio de evaluación al que pertenece (NULL = Examen Parcial general u otro).
+- `tipo` (TEXT NOT NULL DEFAULT 'tarea') - Enumero 'tarea' | 'examen'.
+- `titulo` (TEXT NOT NULL) - Ej. Tarea 1, Proyecto Final, Parcial 1.
+- `fecha_entrega` (TEXT)
+- `created_at` (DATETIME DEFAULT CURRENT_TIMESTAMP)
+
+## 7. CALIFICACION
+Almacena la nota numérica obtenida por un estudiante en una asignación (tabla pivote entre ESTUDIANTE y ASIGNACION).
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `asignacion_id` (INTEGER NOT NULL) - Referencia a ASIGNACION(id)
+- `estudiante_id` (INTEGER NOT NULL) - Referencia a ESTUDIANTE(id)
+- `calificacion` (REAL) - Valor numérico de evaluación.
+- **Observación:** `UNIQUE (asignacion_id, estudiante_id)` cada alumno tiene una sola calificación por asignación.
+
+## 8. CONFIG_ASISTENCIA
+Configuración de los días en que el salón requiere tomar lista (asistencia), supletoria o independiente por salón.
+- `salon_id` (INTEGER PRIMARY KEY) - Única para un salón.
+- `dias_semana` (TEXT NOT NULL DEFAULT '[]') - Días programados guardados como Array JSON, ej: '["Lun","Mié"]'.
+- `minimo_porcentaje` (REAL NOT NULL DEFAULT 80) - Porcentaje mínimo para aprobar sin reprobar por faltas.
+
+## 9. REGISTRO_ASISTENCIA
+Almacena si un alumno faltó o asistió un día determinado.
+- `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+- `salon_id` (INTEGER NOT NULL) - Referencia a SALON(id)
+- `estudiante_id` (INTEGER NOT NULL) - Referencia a ESTUDIANTE(id)
+- `fecha` (TEXT NOT NULL) - Fecha codificada en formato ISO: 'YYYY-MM-DD'.
+- `presente` (INTEGER NOT NULL DEFAULT 0) - 0 = Ausente, 1 = Presente.
+- **Observación:** `UNIQUE (salon_id, estudiante_id, fecha)` evita dobles registros por alumno y día.
+
+
+---
+
+## Ejemplo de uso desde Python
+
+Si quieres consultar o manejar esta base de datos en otro módulo Python, puedes usar la librería estándar `sqlite3` de la siguiente forma:
+
+```python
+import sqlite3
+
+# 1. Conectar a la base de datos local
+conn = sqlite3.connect('C:/Ruta/A/karuna.db') # Cambia esto a la ubicación correcta en el proyecto
+cursor = conn.cursor()
+
+# 2. Consultar todos los docentes
+cursor.execute("SELECT id, email, nombre FROM DOCENTE")
+docentes = cursor.fetchall()
+for docente in docentes:
+    print(f"Docente: {docente}")
+
+# 3. Filtrar alumnos por un salon_id específico (por ejemplo, 1)
+cursor.execute("SELECT id_control, nombre, apellido FROM ESTUDIANTE WHERE salon_id = ?", (1,))
+estudiantes = cursor.fetchall()
+for estudiante in estudiantes:
+    print(f"Estudiante: {estudiante[1]} {estudiante[2]} (ID: {estudiante[0]})")
+
+# 4. Asignar participación extra a un alumno
+cursor.execute("UPDATE ESTUDIANTE SET participacion_extra = ? WHERE id = ?", (10.5, 3))
+conn.commit()
+
+# Siempre cerrar conexión
+conn.close()
+```
